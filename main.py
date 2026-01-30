@@ -1,21 +1,21 @@
 import os
 import logging
-import asyncio
-from flask import Flask, request
+import sys
+from aiohttp import web
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile, InputMediaPhoto
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
 from aiogram.filters import Command
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
-# --- НАСТРОЙКИ ---
+# --- CONFIGURATION ---
 TOKEN = os.getenv('BOT_TOKEN')
-# Render выдает URL типа https://your-app.onrender.com
 RENDER_URL = os.getenv('RENDER_EXTERNAL_HOSTNAME') 
 PORT = int(os.getenv('PORT', 5000))
 
 WEBHOOK_PATH = f"/webhook/{TOKEN}"
-WEBHOOK_URL = f"https://{RENDER_URL}{WEBHOOK_PATH}"
+BASE_URL = f"https://{RENDER_URL}"
 
-# Ссылки на изображения (замени на свои прямые ссылки, если эти не подходят)
+# Media URLs from screenshots
 IMG_MAIN = "https://i.ibb.co/V9z0kXh/1000081144.jpg" 
 IMG_EARN = "https://i.ibb.co/k0m9mYn/1000081143.jpg"
 IMG_WITHDRAW = "https://i.ibb.co/V9z0kXh/1000081144.jpg"
@@ -24,12 +24,12 @@ IMG_BONUS = "https://i.ibb.co/vYm6sH1/1000081146.jpg"
 IMG_PROMO = "https://i.ibb.co/fDb7m4L/1000081145.jpg"
 IMG_TOP = "https://i.ibb.co/PZ9mY5V/1000081148.jpg"
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
-app = Flask(__name__)
 
-# --- КЛАВИАТУРЫ ---
+# --- KEYBOARDS ---
 def get_main_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🌟 Заработать звёзд", callback_data="earn"),
@@ -38,14 +38,14 @@ def get_main_kb():
          InlineKeyboardButton(text="🎁 Бонус", callback_data="bonus")],
         [InlineKeyboardButton(text="🎁 Промокод", callback_data="promo"),
          InlineKeyboardButton(text="🏆 Топ рефеводов", callback_data="top")]
-    ])
+    ]) #
 
 def get_back_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="main_menu")]
     ])
 
-# --- ОБРАБОТЧИКИ ---
+# --- HANDLERS ---
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.answer_photo(
@@ -53,7 +53,7 @@ async def cmd_start(message: types.Message):
         caption="✅ Все проверки пройдены!\n\n✨ Добро пожаловать в <b>MumiStars</b>!",
         parse_mode="HTML",
         reply_markup=get_main_kb()
-    )
+    ) #
 
 @dp.callback_query(F.data == "main_menu")
 async def back_to_main(callback: types.CallbackQuery):
@@ -71,18 +71,18 @@ async def profile(callback: types.CallbackQuery):
     await callback.message.edit_media(
         media=InputMediaPhoto(media=IMG_PROFILE, caption=text, parse_mode="HTML"),
         reply_markup=get_back_kb()
-    )
+    ) #
 
 @dp.callback_query(F.data == "earn")
 async def earn(callback: types.CallbackQuery):
     text = ("<b>ТВОЯ ССЫЛКА</b>\n\n"
             "За каждого друга ты получаешь +8.5⭐!\n\n"
-            f"🔗 Твоя ссылка:\n<code>https://t.me/MumiStarsBot?start={callback.from_user.id}</code>\n\n"
+            f"🔗 Твоя ссылка:\n<code>https://t.me/Wolfstarsrobot?start={callback.from_user.id}</code>\n\n"
             "🎉 Приглашай друзей и зарабатывай!")
     await callback.message.edit_media(
         media=InputMediaPhoto(media=IMG_EARN, caption=text, parse_mode="HTML"),
         reply_markup=get_back_kb()
-    )
+    ) #
 
 @dp.callback_query(F.data == "withdraw")
 async def withdraw(callback: types.CallbackQuery):
@@ -94,21 +94,21 @@ async def withdraw(callback: types.CallbackQuery):
     await callback.message.edit_media(
         media=InputMediaPhoto(media=IMG_WITHDRAW, caption="<b>ВЫВОД ЗВЕЗДОЧЕК</b> ⭐\n\nВыберите сумму вывода:", parse_mode="HTML"),
         reply_markup=kb
-    )
+    ) #
 
 @dp.callback_query(F.data == "bonus")
 async def bonus(callback: types.CallbackQuery):
     await callback.message.edit_media(
         media=InputMediaPhoto(media=IMG_BONUS, caption="<b>ВЫ ПОЛУЧИЛИ БОНУС</b> 🎁\n\n🎉 Вам начислено 0.5 ⭐ бонуса!", parse_mode="HTML"),
         reply_markup=get_back_kb()
-    )
+    ) #
 
 @dp.callback_query(F.data == "promo")
 async def promo(callback: types.CallbackQuery):
     await callback.message.edit_media(
         media=InputMediaPhoto(media=IMG_PROMO, caption="<b>ВВЕДИ ПРОМОКОД</b> 🎁\n\n✏️ Введите промокод:", parse_mode="HTML"),
         reply_markup=get_back_kb()
-    )
+    ) #
 
 @dp.callback_query(F.data == "top")
 async def top(callback: types.CallbackQuery):
@@ -122,28 +122,25 @@ async def top(callback: types.CallbackQuery):
     await callback.message.edit_media(
         media=InputMediaPhoto(media=IMG_TOP, caption=text, parse_mode="HTML"),
         reply_markup=kb
+    ) #
+
+# --- WEBHOOK LOGIC ---
+async def on_startup(bot: Bot) -> None:
+    await bot.set_webhook(f"{BASE_URL}{WEBHOOK_PATH}")
+
+def main():
+    dp.startup.register(on_startup)
+    app = web.Application()
+    
+    webhook_requests_handler = SimpleRequestHandler(
+        dispatcher=dp,
+        bot=bot,
     )
-
-# --- FLASK & WEBHOOK ---
-@app.route(WEBHOOK_PATH, methods=['POST'])
-async def telegram_webhook():
-    update = types.Update.model_validate(request.json, context={"bot": bot})
-    await dp.feed_update(bot, update)
-    return "OK", 200
-
-async def on_startup():
-    await bot.set_webhook(WEBHOOK_URL)
+    webhook_requests_handler.register(app, path=WEBHOOK_PATH)
+    
+    setup_application(app, dp, bot=bot)
+    web.run_app(app, host="0.0.0.0", port=PORT)
 
 if __name__ == "__main__":
-    from threading import Thread
-    
-    # Запуск веб-сервера
-    def run_flask():
-        app.run(host="0.0.0.0", port=PORT)
-    
-    Thread(target=run_flask).start()
-    
-    # Установка вебхука
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(on_startup())
+    main()
 
