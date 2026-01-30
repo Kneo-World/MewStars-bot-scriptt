@@ -9,7 +9,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMedia
 from aiogram.filters import Command
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
-# ========== КОНФИГУРАЦИЯ ==========
+# ========== CONFIG ==========
 TOKEN = os.getenv('BOT_TOKEN')
 RENDER_URL = os.getenv('RENDER_EXTERNAL_HOSTNAME') 
 PORT = int(os.getenv('PORT', 10000))
@@ -17,7 +17,7 @@ PORT = int(os.getenv('PORT', 10000))
 WEBHOOK_PATH = f"/webhook/{TOKEN}"
 BASE_URL = f"https://{RENDER_URL}"
 
-# Ссылки на фото (вставь свои прямые ссылки)
+# Прямые ссылки на твои изображения
 IMG = {
     "main": "https://i.ibb.co/68v8zYp/1000081152.jpg",
     "earn": "https://i.ibb.co/zXyFfL6/1000081150.jpg",
@@ -28,20 +28,17 @@ IMG = {
     "top": "https://i.ibb.co/vXpS6y0/1000081149.jpg"
 }
 
-# ========== БАЗА ДАННЫХ (Для хранения баланса) ==========
+logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
+
+# ========== DATABASE ==========
 class Database:
     def __init__(self, path="bot_stars.db"):
         self.conn = sqlite3.connect(path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
-        self.create_tables()
-
-    def create_tables(self):
         with self.conn:
-            self.conn.execute("""CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY, 
-                stars REAL DEFAULT 0,
-                refs INTEGER DEFAULT 0
-            )""")
+            self.conn.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, stars REAL DEFAULT 0, refs INTEGER DEFAULT 0)")
 
     def get_user(self, user_id):
         cursor = self.conn.cursor()
@@ -59,12 +56,7 @@ class Database:
 
 db = Database()
 
-# ========== ИНИЦИАЛИЗАЦИЯ ==========
-logging.basicConfig(level=logging.INFO, stream=sys.stdout)
-bot = Bot(token=TOKEN)
-dp = Dispatcher()
-
-# ========== КЛАВИАТУРЫ ==========
+# ========== KEYBOARDS ==========
 def main_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🌟 Заработать звёзд", callback_data="earn"),
@@ -78,54 +70,44 @@ def main_kb():
 def back_kb():
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅️ Назад", callback_data="main_menu")]])
 
-# ========== ОБРАБОТЧИКИ ==========
+# ========== HELPERS ==========
+async def send_or_edit(call: types.CallbackQuery, photo_key, caption, kb):
+    """Безопасная функция для смены контента"""
+    try:
+        media = InputMediaPhoto(media=IMG[photo_key], caption=caption, parse_mode="HTML")
+        await call.message.edit_media(media=media, reply_markup=kb)
+    except Exception as e:
+        logging.error(f"Edit error: {e}")
+        await call.message.delete()
+        await call.message.answer_photo(photo=IMG[photo_key], caption=caption, parse_mode="HTML", reply_markup=kb)
 
+# ========== HANDLERS ==========
 @dp.message(Command("start"))
 async def start(message: types.Message):
     db.get_user(message.from_user.id)
-    await message.answer_photo(
-        photo=IMG["main"],
-        caption="✅ Все проверки пройдены!\n\n✨ Добро пожаловать в <b>MumiStars</b>!",
-        parse_mode="HTML",
-        reply_markup=main_kb()
-    )
+    await message.answer_photo(photo=IMG["main"], caption="✅ Все проверки пройдены!\n\n✨ Добро пожаловать в <b>MumiStars</b>!", parse_mode="HTML", reply_markup=main_kb())
 
 @dp.callback_query(F.data == "main_menu")
 async def menu(call: types.CallbackQuery):
-    await call.message.edit_media(
-        media=InputMediaPhoto(media=IMG["main"], caption="✨ Добро пожаловать в <b>MumiStars</b>!", parse_mode="HTML"),
-        reply_markup=main_kb()
-    )
+    await send_or_edit(call, "main", "✨ Добро пожаловать в <b>MumiStars</b>!", main_kb())
 
 @dp.callback_query(F.data == "profile")
 async def profile(call: types.CallbackQuery):
     u = db.get_user(call.from_user.id)
-    text = (f"👤 Имя: <b>{call.from_user.full_name}</b>\n"
-            f"🆔 ID: <code>{call.from_user.id}</code>\n"
-            f"💰 Баланс: <b>{u['stars']:.2f} ⭐</b>\n"
-            f"👥 Приглашено: {u['refs']}")
-    await call.message.edit_media(
-        media=InputMediaPhoto(media=IMG["profile"], caption=text, parse_mode="HTML"),
-        reply_markup=back_kb()
-    )
+    text = f"👤 Имя: <b>{call.from_user.full_name}</b>\n🆔 ID: <code>{call.from_user.id}</code>\n💰 Баланс: <b>{u['stars']:.2f} ⭐</b>\n👥 Приглашено: {u['refs']}"
+    await send_or_edit(call, "profile", text, back_kb())
 
 @dp.callback_query(F.data == "earn")
 async def earn(call: types.CallbackQuery):
-    text = (f"<b>ТВОЯ ССЫЛКА</b>\n\nЗа каждого друга ты получаешь +8.5⭐!\n\n"
-            f"🔗 Твоя ссылка:\n<code>https://t.me/{(await bot.get_me()).username}?start={call.from_user.id}</code>")
-    await call.message.edit_media(
-        media=InputMediaPhoto(media=IMG["earn"], caption=text, parse_mode="HTML"),
-        reply_markup=back_kb()
-    )
+    me = await bot.get_me()
+    text = f"<b>ТВОЯ ССЫЛКА</b>\n\nЗа каждого друга ты получаешь +8.5⭐!\n\n🔗 Ссылка:\n<code>https://t.me/{me.username}?start={call.from_user.id}</code>"
+    await send_or_edit(call, "earn", text, back_kb())
 
 @dp.callback_query(F.data == "bonus")
 async def bonus(call: types.CallbackQuery):
     db.add_stars(call.from_user.id, 0.5)
-    await call.answer("🎁 +0.5 звезд!", show_alert=True)
-    await call.message.edit_media(
-        media=InputMediaPhoto(media=IMG["bonus"], caption="<b>БОНУС ЗАБРАН</b>\n\n🎉 Вам начислено 0.5 ⭐!", parse_mode="HTML"),
-        reply_markup=back_kb()
-    )
+    await call.answer("🎁 +0.5 звезд!", show_alert=False)
+    await send_or_edit(call, "bonus", "<b>БОНУС ЗАБРАН</b>\n\n🎉 Вам начислено 0.5 ⭐!", back_kb())
 
 @dp.callback_query(F.data == "withdraw")
 async def withdraw(call: types.CallbackQuery):
@@ -134,27 +116,17 @@ async def withdraw(call: types.CallbackQuery):
         [InlineKeyboardButton(text="100 ⭐", callback_data="w"), InlineKeyboardButton(text="300 ⭐", callback_data="w")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="main_menu")]
     ])
-    await call.message.edit_media(
-        media=InputMediaPhoto(media=IMG["withdraw"], caption="<b>ВЫВОД ЗВЕЗДОЧЕК</b>\n\nВыберите сумму:", parse_mode="HTML"),
-        reply_markup=kb
-    )
+    await send_or_edit(call, "withdraw", "<b>ВЫВОД ЗВЕЗДОЧЕК</b>\n\nВыберите сумму:", kb)
 
 @dp.callback_query(F.data == "top")
 async def top(call: types.CallbackQuery):
-    text = "<b>ТОП ПО ПРИГЛАШЕНИЯМ</b> 🏆\n\n1. ✨°•мария_чалкова•°✨ — 1 реф."
-    await call.message.edit_media(
-        media=InputMediaPhoto(media=IMG["top"], caption=text, parse_mode="HTML"),
-        reply_markup=back_kb()
-    )
+    await send_or_edit(call, "top", "<b>ТОП ПО ПРИГЛАШЕНИЯМ</b> 🏆\n\n1. ✨°•мария_чалкова•°✨ — 1 реф.", back_kb())
 
 @dp.callback_query(F.data == "promo")
 async def promo(call: types.CallbackQuery):
-    await call.message.edit_media(
-        media=InputMediaPhoto(media=IMG["promo"], caption="<b>ПРОМОКОД</b>\n\n✏️ Введите промокод в чат:", parse_mode="HTML"),
-        reply_markup=back_kb()
-    )
+    await send_or_edit(call, "promo", "<b>ПРОМОКОД</b>\n\n✏️ Введите промокод в чат:", back_kb())
 
-# ========== ЗАПУСК СЕРВЕРА ==========
+# ========== WEBHOOK RUNNER ==========
 async def on_startup(bot: Bot):
     await bot.set_webhook(f"{BASE_URL}{WEBHOOK_PATH}", drop_pending_updates=True)
 
