@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 import sys
 from aiohttp import web
 from aiogram import Bot, Dispatcher, types, F
@@ -7,7 +8,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMedia
 from aiogram.filters import Command
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
-# --- CONFIGURATION ---
+# --- CONFIG ---
 TOKEN = os.getenv('BOT_TOKEN')
 RENDER_URL = os.getenv('RENDER_EXTERNAL_HOSTNAME') 
 PORT = int(os.getenv('PORT', 5000))
@@ -15,14 +16,15 @@ PORT = int(os.getenv('PORT', 5000))
 WEBHOOK_PATH = f"/webhook/{TOKEN}"
 BASE_URL = f"https://{RENDER_URL}"
 
-# Media URLs from screenshots
-IMG_MAIN = "https://i.ibb.co/V9z0kXh/1000081144.jpg" 
-IMG_EARN = "https://i.ibb.co/k0m9mYn/1000081143.jpg"
-IMG_WITHDRAW = "https://i.ibb.co/V9z0kXh/1000081144.jpg"
-IMG_PROFILE = "https://i.ibb.co/W2f9V4p/1000081147.jpg"
-IMG_BONUS = "https://i.ibb.co/vYm6sH1/1000081146.jpg"
-IMG_PROMO = "https://i.ibb.co/fDb7m4L/1000081145.jpg"
-IMG_TOP = "https://i.ibb.co/PZ9mY5V/1000081148.jpg"
+# Images (Ссылки на твои скриншоты)
+# Если ссылка перестанет работать, замени на актуальную
+IMG_MAIN = "https://i.ibb.co/68v8zYp/1000081152.jpg" 
+IMG_EARN = "https://i.ibb.co/zXyFfL6/1000081150.jpg"
+IMG_WITHDRAW = "https://i.ibb.co/fGPn0W1/1000081155.jpg"
+IMG_PROFILE = "https://i.ibb.co/L5rK5Q5/1000081151.jpg"
+IMG_BONUS = "https://i.ibb.co/gP5WqFz/1000081154.jpg"
+IMG_PROMO = "https://i.ibb.co/f2P6g8d/1000081153.jpg"
+IMG_TOP = "https://i.ibb.co/vXpS6y0/1000081149.jpg"
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
@@ -38,7 +40,7 @@ def get_main_kb():
          InlineKeyboardButton(text="🎁 Бонус", callback_data="bonus")],
         [InlineKeyboardButton(text="🎁 Промокод", callback_data="promo"),
          InlineKeyboardButton(text="🏆 Топ рефеводов", callback_data="top")]
-    ]) #
+    ])
 
 def get_back_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -53,36 +55,39 @@ async def cmd_start(message: types.Message):
         caption="✅ Все проверки пройдены!\n\n✨ Добро пожаловать в <b>MumiStars</b>!",
         parse_mode="HTML",
         reply_markup=get_main_kb()
-    ) #
+    )
 
 @dp.callback_query(F.data == "main_menu")
 async def back_to_main(callback: types.CallbackQuery):
-    await callback.message.edit_media(
-        media=InputMediaPhoto(media=IMG_MAIN, caption="✨ Добро пожаловать в <b>MumiStars</b>!", parse_mode="HTML"),
-        reply_markup=get_main_kb()
-    )
+    try:
+        await callback.message.edit_media(
+            media=InputMediaPhoto(media=IMG_MAIN, caption="✨ Добро пожаловать в <b>MumiStars</b>!", parse_mode="HTML"),
+            reply_markup=get_main_kb()
+        )
+    except Exception:
+        await callback.answer()
 
 @dp.callback_query(F.data == "profile")
 async def profile(callback: types.CallbackQuery):
     text = (f"👤 Имя: <b>{callback.from_user.full_name}</b> 👑\n"
             f"🆔 ID: <code>{callback.from_user.id}</code>\n"
-            f"💰 Баланс: 5.00 ⭐\n"
+            f"💰 Баланс: 4.50 ⭐\n"
             f"👥 Приглашено: 2")
     await callback.message.edit_media(
         media=InputMediaPhoto(media=IMG_PROFILE, caption=text, parse_mode="HTML"),
         reply_markup=get_back_kb()
-    ) #
+    )
 
 @dp.callback_query(F.data == "earn")
 async def earn(callback: types.CallbackQuery):
     text = ("<b>ТВОЯ ССЫЛКА</b>\n\n"
             "За каждого друга ты получаешь +8.5⭐!\n\n"
-            f"🔗 Твоя ссылка:\n<code>https://t.me/Wolfstarsrobot?start={callback.from_user.id}</code>\n\n"
+            f"🔗 Твоя ссылка:\n<code>https://t.me/MumiStarsBot?start={callback.from_user.id}</code>\n\n"
             "🎉 Приглашай друзей и зарабатывай!")
     await callback.message.edit_media(
         media=InputMediaPhoto(media=IMG_EARN, caption=text, parse_mode="HTML"),
         reply_markup=get_back_kb()
-    ) #
+    )
 
 @dp.callback_query(F.data == "withdraw")
 async def withdraw(callback: types.CallbackQuery):
@@ -94,21 +99,21 @@ async def withdraw(callback: types.CallbackQuery):
     await callback.message.edit_media(
         media=InputMediaPhoto(media=IMG_WITHDRAW, caption="<b>ВЫВОД ЗВЕЗДОЧЕК</b> ⭐\n\nВыберите сумму вывода:", parse_mode="HTML"),
         reply_markup=kb
-    ) #
+    )
 
 @dp.callback_query(F.data == "bonus")
 async def bonus(callback: types.CallbackQuery):
     await callback.message.edit_media(
         media=InputMediaPhoto(media=IMG_BONUS, caption="<b>ВЫ ПОЛУЧИЛИ БОНУС</b> 🎁\n\n🎉 Вам начислено 0.5 ⭐ бонуса!", parse_mode="HTML"),
         reply_markup=get_back_kb()
-    ) #
+    )
 
 @dp.callback_query(F.data == "promo")
 async def promo(callback: types.CallbackQuery):
     await callback.message.edit_media(
         media=InputMediaPhoto(media=IMG_PROMO, caption="<b>ВВЕДИ ПРОМОКОД</b> 🎁\n\n✏️ Введите промокод:", parse_mode="HTML"),
         reply_markup=get_back_kb()
-    ) #
+    )
 
 @dp.callback_query(F.data == "top")
 async def top(callback: types.CallbackQuery):
@@ -122,10 +127,11 @@ async def top(callback: types.CallbackQuery):
     await callback.message.edit_media(
         media=InputMediaPhoto(media=IMG_TOP, caption=text, parse_mode="HTML"),
         reply_markup=kb
-    ) #
+    )
 
 # --- WEBHOOK LOGIC ---
 async def on_startup(bot: Bot) -> None:
+    await bot.delete_webhook(drop_pending_updates=True)
     await bot.set_webhook(f"{BASE_URL}{WEBHOOK_PATH}")
 
 def main():
@@ -143,4 +149,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
