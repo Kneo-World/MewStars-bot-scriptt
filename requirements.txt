@@ -1,3 +1,4 @@
+aiogram>=3.0.0
 flask
-aiogram==2.25.1
-
+aiohttp
+gunicorn
